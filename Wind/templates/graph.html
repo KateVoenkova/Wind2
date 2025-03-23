@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1a1a1a;
+        }
+
+        #graph-container {
+            width: 100%;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="graph-container"></div>
+
+    <script>
+        // Конфигурация стилей
+        const config = {
+            nodeSize: 40,
+            linkWidth: d => Math.sqrt(d.value) * 2,
+            forceStrength: -800,
+            linkDistance: 200,
+            textPadding: 50
+        };
+
+        // Инициализация визуализации
+        function initGraph() {
+            const container = d3.select("#graph-container");
+            container.html(""); // Очистка предыдущего графа
+
+            const width = window.innerWidth;
+            const height = window.innerHeight - 5;
+
+            const svg = container.append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            // Градиент для узлов
+            const defs = svg.append("defs");
+            const gradient = defs.append("radialGradient")
+                .attr("id", "node-gradient")
+                .attr("cx", "40%")
+                .attr("cy", "40%")
+                .attr("r", "70%");
+
+            gradient.append("stop")
+                .attr("offset", "0%")
+                .attr("stop-color", "#ff6b6b");
+
+            gradient.append("stop")
+                .attr("offset", "100%")
+                .attr("stop-color", "#ff4757");
+
+            // Загрузка данных
+            fetch("{{ url_for('get_graph_data', book_id=book.id) }}")
+                .then(response => response.json())
+                .then(data => {
+                    data.links = data.links.filter(link => link.value >= 3);
+
+                    // Симуляция сил
+                    const simulation = d3.forceSimulation(data.nodes)
+                        .force("link", d3.forceLink(data.links)
+                            .id(d => d.id)
+                            .distance(config.linkDistance)
+                        )
+                        .force("charge", d3.forceManyBody()
+                            .strength(config.forceStrength)
+                        )
+                        .force("center", d3.forceCenter(width/2, height/2))
+                        .force("collide", d3.forceCollide(config.nodeSize * 1.5));
+
+                    // Отрисовка связей
+                    const link = svg.append("g")
+                        .selectAll("line")
+                        .data(data.links)
+                        .enter()
+                        .append("line")
+                        .attr("stroke", "#4a90e2")
+                        .attr("stroke-width", config.linkWidth)
+                        .attr("stroke-opacity", 0.6)
+                        .attr("class", "glow")
+                        .style("filter", "url(#glow)");
+
+                    // Отрисовка узлов
+                    const node = svg.append("g")
+                        .selectAll("circle")
+                        .data(data.nodes)
+                        .enter()
+                        .append("a")
+                        .attr("href", d => `/characters/${d.id}`)
+                        .append("circle")
+                        .attr("r", config.nodeSize)
+                        .attr("fill", "url(#node-gradient)")
+                        .style("cursor", "pointer")
+                        .call(d3.drag()
+                            .on("start", dragstarted)
+                            .on("drag", dragged)
+                            .on("end", dragended)
+                        );
+
+                    // Текстовые метки
+                    const labels = svg.append("g")
+                        .selectAll("text")
+                        .data(data.nodes)
+                        .enter()
+                        .append("text")
+                        .text(d => d.name)
+                        .attr("font-size", "16px")
+                        .attr("fill", "#fff")
+                        .style("text-shadow", "2px 2px 4px rgba(0,0,0,0.5)")
+                        .style("pointer-events", "none");
+
+                    // Фильтр для свечения
+                    const glowFilter = defs.append("filter")
+                        .attr("id", "glow");
+
+                    glowFilter.append("feGaussianBlur")
+                        .attr("stdDeviation", "3")
+                        .attr("result", "coloredBlur");
+
+                    const feMerge = glowFilter.append("feMerge");
+                    feMerge.append("feMergeNode")
+                        .attr("in", "coloredBlur");
+                    feMerge.append("feMergeNode")
+                        .attr("in", "SourceGraphic");
+
+                    // Обновление позиций
+                    simulation.on("tick", () => {
+                        link.attr("x1", d => Math.max(config.nodeSize, Math.min(width - config.nodeSize, d.source.x)))
+                            .attr("y1", d => Math.max(config.nodeSize, Math.min(height - config.nodeSize, d.source.y)))
+                            .attr("x2", d => Math.max(config.nodeSize, Math.min(width - config.nodeSize, d.target.x)))
+                            .attr("y2", d => Math.max(config.nodeSize, Math.min(height - config.nodeSize, d.target.y)));
+
+                        node.attr("cx", d => d.x = Math.max(config.nodeSize, Math.min(width - config.nodeSize, d.x)))
+                            .attr("cy", d => d.y = Math.max(config.nodeSize, Math.min(height - config.nodeSize, d.y)));
+
+                        labels.attr("x", d => d.x + config.textPadding)
+                              .attr("y", d => d.y);
+                    });
+
+                    // Обработчики событий
+                    function dragstarted(event) {
+                        if (!event.active) simulation.alphaTarget(0.3).restart();
+                        event.subject.fx = event.subject.x;
+                        event.subject.fy = event.subject.y;
+                    }
+
+                    function dragged(event) {
+                        event.subject.fx = Math.max(config.nodeSize, Math.min(width - config.nodeSize, event.x));
+                        event.subject.fy = Math.max(config.nodeSize, Math.min(height - config.nodeSize, event.y));
+                    }
+
+                    function dragended(event) {
+                        if (!event.active) simulation.alphaTarget(0);
+                        event.subject.fx = null;
+                        event.subject.fy = null;
+                    }
+
+                    // Адаптивность
+                    window.addEventListener('resize', () => {
+                        svg.attr("width", window.innerWidth)
+                           .attr("height", window.innerHeight);
+                        simulation.force("center", d3.forceCenter(window.innerWidth/2, window.innerHeight/2))
+                                 .restart();
+                    });
+                });
+        }
+
+        // Инициализация при загрузке
+        initGraph();
+    </script>
+</body>
+</html>

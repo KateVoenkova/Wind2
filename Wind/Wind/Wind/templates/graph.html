@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Визуализация связей: {{ book.title }}</h1>
+        <a href="{{ url_for('book_page', book_id=book.id) }}" class="btn">← Назад</a>
+        <div id="graph-container"></div>
+    </div>
+
+    <script>
+        fetch("{{ url_for('get_graph_data', book_id=book.id) }}")
+            .then(response => response.json())
+            .then(data => {
+                const minWeight = 3;
+                data.links = data.links.filter(link => link.value >= minWeight);
+
+                const width = 1200;
+                const height = 800;
+                const svg = d3.select("#graph-container")
+                    .append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+                const simulation = d3.forceSimulation(data.nodes)
+                    .force("link", d3.forceLink(data.links).id(d => d.id).distance(150))
+                    .force("charge", d3.forceManyBody().strength(-1200))
+                    .force("center", d3.forceCenter(width/2, height/2));
+
+                const link = svg.append("g")
+                    .selectAll("line")
+                    .data(data.links)
+                    .enter()
+                    .append("line")
+                    .attr("stroke", "#4a90e2")
+                    .attr("stroke-width", d => d.value * 0.5);
+
+                const node = svg.append("g")
+                    .selectAll("circle")
+                    .data(data.nodes)
+                    .enter()
+                    .append("circle")
+                    .attr("r", 25)
+                    .attr("fill", "#ff6b6b")
+                    .call(d3.drag()
+                        .on("start", dragstarted)
+                        .on("drag", dragged)
+                        .on("end", dragended));
+
+                const labels = svg.append("g")
+                    .selectAll("text")
+                    .data(data.nodes)
+                    .enter()
+                    .append("text")
+                    .text(d => d.name)
+                    .attr("font-size", 14)
+                    .attr("dx", 30)
+                    .attr("dy", 5)
+                    .attr("fill", "#333");
+
+                simulation.on("tick", () => {
+                    link.attr("x1", d => d.source.x)
+                        .attr("y1", d => d.source.y)
+                        .attr("x2", d => d.target.x)
+                        .attr("y2", d => d.target.y);
+
+                    node.attr("cx", d => d.x)
+                        .attr("cy", d => d.y);
+
+                    labels.attr("x", d => d.x)
+                          .attr("y", d => d.y);
+                });
+
+                function dragstarted(event) {
+                    if (!event.active) simulation.alphaTarget(0.3).restart();
+                    event.subject.fx = event.subject.x;
+                    event.subject.fy = event.subject.y;
+                }
+
+                function dragged(event) {
+                    event.subject.fx = event.x;
+                    event.subject.fy = event.y;
+                }
+
+                function dragended(event) {
+                    if (!event.active) simulation.alphaTarget(0);
+                    event.subject.fx = null;
+                    event.subject.fy = null;
+                }
+            });
+    </script>
+</body>
+</html>

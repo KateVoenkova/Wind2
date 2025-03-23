@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="{{ url_for('static_files', filename='styles.css') }}">
+</head>
+<body>
+    <form action="/upload" method="POST" enctype="multipart/form-data">
+        <input type="text" name="title" placeholder="Название книги" required>
+        <input type="file" name="file" accept=".txt" required>
+        <button type="submit">Загрузить</button>
+    </form>
+</body>
+</html>
